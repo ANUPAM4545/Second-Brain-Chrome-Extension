@@ -10,10 +10,10 @@ export const DocumentStatus = {
   FAILED_PARSING: 'FAILED_PARSING',
   FAILED_EMBEDDING: 'FAILED_EMBEDDING',
   ARCHIVED: 'ARCHIVED',
-  DELETED: 'DELETED'
+  DELETED: 'DELETED',
 } as const;
 
-export type DocumentStatus = typeof DocumentStatus[keyof typeof DocumentStatus];
+export type DocumentStatus = (typeof DocumentStatus)[keyof typeof DocumentStatus];
 
 export interface DocumentEntity {
   id: string; // UUID

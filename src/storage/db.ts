@@ -9,12 +9,12 @@ export class SecondBrainDB extends Dexie {
 
   constructor() {
     super('SecondBrainDB');
-    
+
     // Define schema
     this.version(1).stores({
       documents: 'id, url, normalizedUrl, domain, captureTime, lastVisitTime, status',
       chunks: 'id, documentId',
-      embeddings: 'id, status'
+      embeddings: 'id, status',
     });
   }
 }

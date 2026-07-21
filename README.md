@@ -1,15 +1,19 @@
 # Second Brain Chrome Extension
-Milestone 1 Completed: Scaffolding, Repositories, Workers, and Capture Pipeline.
+
+Milestone 1 Completed: Project Foundation & Scaffolding.
 
 ## Features implemented
-- Vite React CRX setup
-- Dexie Database with schema
-- Repository pattern (Document, Chunk, Embedding)
-- Dedicated Worker stubs (Parser, Embedding, Retrieval)
-- Background Service Worker with Capture Queue
-- Content script with SPA transition detection and Readability DOM extraction
+
+- Vite React CRX setup with Manifest V3
+- Storage & Repositories scaffolding (Dexie DB)
+- Dedicated Worker skeletons (Parser, Embedding, Retrieval)
+- Background Service Worker skeleton
+- Content script skeleton
+- Dependency Injection foundation
+- Code quality tooling: ESLint, Prettier, Husky, Commitlint
 
 ## Development
+
 ```bash
 npm install
 npm run dev

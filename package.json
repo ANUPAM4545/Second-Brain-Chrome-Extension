@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepare": "husky"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
@@ -19,6 +20,8 @@
     "turndown": "^7.2.4"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
     "@crxjs/vite-plugin": "^2.0.0-beta.33",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/chrome": "^0.2.2",
@@ -29,8 +32,10 @@
     "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.5.4",
+    "husky": "^9.1.7",
     "oxlint": "^1.71.0",
     "postcss": "^8.5.20",
+    "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
