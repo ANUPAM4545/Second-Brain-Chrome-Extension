@@ -81,13 +81,16 @@ export interface ChunkEntity {
 
 export interface EmbeddingEntity {
   schemaVersion: number;
-  id: string; // Foreign Key matches ChunkEntity ID
+  embeddingId: string; // Primary Key UUID
+  chunkId: string; // Foreign Key to ChunkEntity
+  documentId: string; // Foreign Key to DocumentEntity
+  provider: string; // e.g. 'Transformers.js'
+  model: string; // e.g. 'Xenova/all-MiniLM-L6-v2'
+  dimensions: number;
   vector: number[] | Float32Array; // Stored as array for Dexie
-  modelName: string;
-  modelVersion: string;
-  dimension: number;
-  generationTime: number; // Epoch
-  status: 'ACTIVE' | 'STALE';
+  createdAt: number; // Epoch
+  processingTime: number; // Milliseconds taken to generate
+  status: 'ACTIVE' | 'STALE' | 'FAILED';
 }
 
 export interface EvaluationRunEntity {

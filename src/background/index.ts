@@ -7,6 +7,7 @@ import { CryptoUtils } from '../utils/crypto';
 import { DeduplicationEngine } from '../ai/DeduplicationEngine';
 import { JaccardSimilarityStrategy } from '../ai/similarity';
 import { ChunkingEngine } from '../ai/ChunkingEngine';
+import { EmbeddingQueue } from '../ai/embeddings/EmbeddingQueue';
 
 console.log('Background Service Worker initialized');
 
@@ -23,6 +24,7 @@ let isProcessing = false;
 // Initialize engines
 const similarityStrategy = new JaccardSimilarityStrategy(0.9, 3);
 const dedupEngine = new DeduplicationEngine(similarityStrategy);
+const embeddingQueue = new EmbeddingQueue();
 
 const parserWorker = new Worker(new URL('../workers/parser.worker.ts', import.meta.url), {
   type: 'module',
@@ -74,6 +76,9 @@ parserWorker.onmessage = async (e) => {
       doc.status = DocumentStatus.WAITING_FOR_EMBEDDING;
       await DocumentRepository.save(doc);
       console.log(`[Pipeline] WAITING_FOR_EMBEDDING ${doc.canonicalUrl}`);
+
+      // 8. Trigger Embedding Queue (which will transition to INDEXED when done)
+      await embeddingQueue.processDocument(doc.id);
     } catch (err) {
       console.error('[Pipeline] Failed during downstream processing:', err);
     }
