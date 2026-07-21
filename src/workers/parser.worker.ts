@@ -2,6 +2,7 @@ import { DOMParser } from 'linkedom';
 import { Readability } from '@mozilla/readability';
 import TurndownService from 'turndown';
 import type { DocumentEntity } from '../shared/types';
+import { DocumentStatus } from '../shared/types';
 import { DocumentRepository } from '../repositories/DocumentRepository';
 
 const turndownService = new TurndownService();
@@ -38,9 +39,6 @@ self.onmessage = async (e) => {
       const readingTime = Math.ceil(wordCount / 200);
       const characterCount = article.textContent.length;
 
-      // Simple hash (can be replaced with robust simhash later)
-      const contentHash = btoa(encodeURIComponent(markdown.substring(0, 200))).substring(0, 32);
-
       // Update Document Entity
       const updatedDoc: DocumentEntity = {
         ...doc,
@@ -49,8 +47,8 @@ self.onmessage = async (e) => {
         wordCount,
         readingTime,
         characterCount,
-        contentHash,
         markdown,
+        status: DocumentStatus.PARSED,
       };
 
       // Save to Repository

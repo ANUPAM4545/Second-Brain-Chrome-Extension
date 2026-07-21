@@ -1,10 +1,15 @@
 import type { DocumentEntity } from '../shared/types';
 import { DocumentStatus } from '../shared/types';
 import { DocumentRepository } from '../repositories/DocumentRepository';
+import { ChunkRepository } from '../repositories/ChunkRepository';
+import { URLNormalizer } from '../utils/url';
+import { CryptoUtils } from '../utils/crypto';
+import { DeduplicationEngine } from '../ai/DeduplicationEngine';
+import { JaccardSimilarityStrategy } from '../ai/similarity';
+import { ChunkingEngine } from '../ai/ChunkingEngine';
 
 console.log('Background Service Worker initialized');
 
-// Queue to hold capture tasks
 interface RawCapturePayload {
   url: string;
   title: string;
@@ -15,7 +20,10 @@ interface RawCapturePayload {
 const captureQueue: RawCapturePayload[] = [];
 let isProcessing = false;
 
-// Initialize the parser worker
+// Initialize engines
+const similarityStrategy = new JaccardSimilarityStrategy(0.9, 3);
+const dedupEngine = new DeduplicationEngine(similarityStrategy);
+
 const parserWorker = new Worker(new URL('../workers/parser.worker.ts', import.meta.url), {
   type: 'module',
 });
@@ -24,21 +32,58 @@ parserWorker.onmessage = async (e) => {
   const { type, payload, error } = e.data;
 
   if (type === 'PARSE_SUCCESS') {
-    const doc: DocumentEntity = payload;
+    let doc: DocumentEntity = payload;
     try {
-      await DocumentRepository.updateStatus(doc.id, DocumentStatus.READY);
-      console.log('[Background] Document parsed and saved:', doc.url);
+      console.log(`[Pipeline] PARSED ${doc.url}`);
+
+      // 1. URL Normalization
+      const urls = URLNormalizer.normalize(doc.url);
+      doc.normalizedUrl = urls.normalizedUrl;
+      doc.canonicalUrl = urls.canonicalUrl;
+
+      // 2. SHA-256 Hashing
+      if (doc.markdown) {
+        doc.contentHash = await CryptoUtils.generateSHA256Hash(doc.markdown);
+        doc.hashAlgorithm = 'SHA-256';
+        doc.hashVersion = '1.0';
+        doc.hashTimestamp = Date.now();
+      }
+
+      // 3. Transition to WaitingForDedup
+      doc.status = DocumentStatus.WAITING_FOR_DEDUP;
+      await DocumentRepository.save(doc);
+      console.log(`[Pipeline] WAITING_FOR_DEDUP ${doc.canonicalUrl}`);
+
+      // 4. Deduplication Engine
+      doc = await dedupEngine.process(doc); // Status becomes DEDUPLICATED
+      console.log(`[Pipeline] DEDUPLICATED ${doc.canonicalUrl} (v${doc.versionNumber})`);
+
+      // 5. Chunking Engine
+      const chunks = await ChunkingEngine.chunkDocument(doc);
+      doc.chunkCount = chunks.length;
+      doc.status = DocumentStatus.CHUNKED;
+      await DocumentRepository.save(doc);
+
+      // 6. Chunk Repository Save
+      if (chunks.length > 0) {
+        await ChunkRepository.saveAll(chunks);
+      }
+      console.log(`[Pipeline] CHUNKED ${doc.canonicalUrl} (${chunks.length} chunks)`);
+
+      // 7. Transition to WaitingForEmbedding
+      doc.status = DocumentStatus.WAITING_FOR_EMBEDDING;
+      await DocumentRepository.save(doc);
+      console.log(`[Pipeline] WAITING_FOR_EMBEDDING ${doc.canonicalUrl}`);
     } catch (err) {
-      console.error('[Background] Failed to save parsed doc:', err);
+      console.error('[Pipeline] Failed during downstream processing:', err);
     }
   } else if (type === 'PARSE_FAILED') {
-    console.error('[Background] Parser Worker failed:', error);
+    console.error('[Pipeline] Parser Worker failed:', error);
     if (payload?.id) {
       await DocumentRepository.updateStatus(payload.id, DocumentStatus.FAILED_PARSING);
     }
   }
 
-  // Continue processing queue
   isProcessing = false;
   processQueue();
 };
@@ -53,25 +98,29 @@ const processQueue = async () => {
     return;
   }
 
-  console.log('[Background] Processing raw capture for:', rawData.url);
+  console.log('[Pipeline] Starting capture for:', rawData.url);
   try {
     const docId = crypto.randomUUID();
 
-    // Initial Document Creation
+    // Initial Document Creation (schemaVersion: 1)
     const initialDoc: DocumentEntity = {
+      schemaVersion: 1,
       id: docId,
       url: rawData.url,
-      normalizedUrl: new URL(rawData.url).origin + new URL(rawData.url).pathname,
+      normalizedUrl: rawData.url, // Temporary until normalized
       title: rawData.title,
       domain: new URL(rawData.url).hostname,
-      language: 'en', // Will be updated by parser
+      language: 'en',
       readingTime: 0,
       wordCount: 0,
       characterCount: 0,
       captureTime: rawData.timestamp,
       lastVisitTime: rawData.timestamp,
       visitCount: 1,
-      contentHash: '',
+      contentHash: '', // Temporary
+      versionNumber: 1,
+      createdDate: Date.now(),
+      modifiedDate: Date.now(),
       parserVersion: '1.0',
       embeddingVersion: '1.0',
       chunkCount: 0,
@@ -79,20 +128,19 @@ const processQueue = async () => {
       rawHtml: rawData.rawHtml,
     };
 
-    // Save initial state
     await DocumentRepository.save(initialDoc);
 
-    // Update state to CLEANING and send to worker
-    await DocumentRepository.updateStatus(docId, DocumentStatus.CLEANING);
+    initialDoc.status = DocumentStatus.CLEANING;
+    await DocumentRepository.save(initialDoc);
+
     parserWorker.postMessage({ type: 'PARSE_DOCUMENT', payload: initialDoc });
   } catch (e) {
-    console.error('[Background] Failed to process queue item:', e);
+    console.error('[Pipeline] Failed to process queue item:', e);
     isProcessing = false;
-    processQueue(); // Attempt next
+    processQueue();
   }
 };
 
-// Listen to messages from content script
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'CAPTURE_RAW_PAGE') {
     captureQueue.push(message.payload);
@@ -102,20 +150,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-// Tab update detection
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url && tab.url.startsWith('http')) {
-    console.log('[Background] Tab updated (navigation detected):', tab.url);
-    // The content script will automatically handle extraction,
-    // this listener serves as a supplementary tracker for architecture compliance.
+    console.log('[Background] Tab updated:', tab.url);
   }
 });
 
-// WebNavigation detection
 chrome.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId === 0 && details.url.startsWith('http')) {
-    // Main frame only
     console.log('[Background] WebNavigation completed:', details.url);
-    // The content script handles extraction, but we track the navigation lifecycle here.
   }
 });

@@ -4,7 +4,16 @@ import { DocumentStatus } from '../shared/types';
 
 export class DocumentRepository {
   static async save(doc: DocumentEntity): Promise<string> {
-    return db.documents.put(doc);
+    return await db.documents.put(doc);
+  }
+
+  static async findByCanonicalUrl(url: string): Promise<DocumentEntity[]> {
+    return await db.documents
+      .where('canonicalUrl')
+      .equals(url)
+      .or('normalizedUrl')
+      .equals(url)
+      .toArray();
   }
 
   static async getById(id: string): Promise<DocumentEntity | undefined> {
