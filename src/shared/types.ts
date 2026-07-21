@@ -88,8 +88,13 @@ export interface EmbeddingEntity {
   model: string; // e.g. 'Xenova/all-MiniLM-L6-v2'
   dimensions: number;
   vector: number[] | Float32Array; // Stored as array for Dexie
+  vectorNorm: number; // Precomputed Euclidean norm for cosine similarity
+  embeddingVersion: string;
+  providerVersion: string;
+  modelVersion: string;
   createdAt: number; // Epoch
   processingTime: number; // Milliseconds taken to generate
+  lastValidatedAt?: number;
   status: 'ACTIVE' | 'STALE' | 'FAILED';
 }
 

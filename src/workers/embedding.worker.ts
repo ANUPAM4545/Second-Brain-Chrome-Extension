@@ -27,11 +27,16 @@ self.onmessage = async (e) => {
       // Vector Validation
       VectorValidation.validateBatch(vectors, expectedDim);
 
+      const vectorNorms = vectors.map((vec) =>
+        Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0))
+      );
+
       self.postMessage({
         type: 'BATCH_SUCCESS',
         payload: {
           jobId: payload.jobId,
           vectors,
+          vectorNorms,
           model,
           provider: providerName,
           dimensions: expectedDim,

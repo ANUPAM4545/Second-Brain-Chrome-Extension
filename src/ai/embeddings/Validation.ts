@@ -10,6 +10,10 @@ export class VectorValidation {
           throw new Error('Vector contains NaN or Infinity values');
         }
       }
+      const norm = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0));
+      if (norm === 0 || isNaN(norm)) {
+        throw new Error('Vector norm is zero or NaN');
+      }
     }
   }
 }

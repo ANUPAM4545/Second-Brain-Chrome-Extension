@@ -22,6 +22,7 @@ class MockWorker {
             payload: {
               jobId: data.payload.jobId,
               vectors: data.payload.chunks.map(() => [0.1, 0.2]),
+              vectorNorms: data.payload.chunks.map(() => 0.223606),
               model: 'TestModel',
               provider: 'TestProvider',
               dimensions: 2,
@@ -54,7 +55,7 @@ describe('EmbeddingQueue', () => {
       status: DocumentStatus.WAITING_FOR_EMBEDDING,
     } as any);
 
-    const queue = new EmbeddingQueue({ batchSize: 2 });
+    const queue = new EmbeddingQueue();
     await queue.processDocument('doc1');
 
     expect(EmbeddingRepository.bulkInsert).toHaveBeenCalled();

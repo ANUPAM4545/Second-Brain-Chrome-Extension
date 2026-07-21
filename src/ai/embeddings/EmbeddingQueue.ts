@@ -4,32 +4,15 @@ import { DocumentRepository } from '../../repositories/DocumentRepository';
 import { DocumentStatus } from '../../shared/types';
 import type { ChunkEntity, EmbeddingEntity } from '../../shared/types';
 
-export interface EmbeddingConfig {
-  batchSize: number;
-  maxConcurrentJobs: number;
-  maxQueueLength: number;
-  maxRetries: number;
-  retryDelay: number;
-  timeout: number;
-}
-
-const DEFAULT_CONFIG: EmbeddingConfig = {
-  batchSize: 8,
-  maxConcurrentJobs: 1,
-  maxQueueLength: 1000,
-  maxRetries: 3,
-  retryDelay: 1000, // Ms
-  timeout: 30000,
-};
+import { EmbeddingConfig } from '../../config/EmbeddingConfig';
+import { EmbeddingStats } from '../../metrics/EmbeddingStats';
 
 export class EmbeddingQueue {
-  private config: EmbeddingConfig;
   private worker: Worker;
   private jobResolvers: Map<string, { resolve: (val: any) => void; reject: (err: any) => void }> =
     new Map();
 
-  constructor(config: Partial<EmbeddingConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+  constructor() {
     this.worker = new Worker(new URL('../../workers/embedding.worker.ts', import.meta.url), {
       type: 'module',
     });
@@ -72,9 +55,9 @@ export class EmbeddingQueue {
       return;
     }
 
-    // Process in batches sequentially based on maxConcurrentJobs = 1
-    for (let i = 0; i < pendingChunks.length; i += this.config.batchSize) {
-      const batch = pendingChunks.slice(i, i + this.config.batchSize);
+    // Process in batches sequentially based on config
+    for (let i = 0; i < pendingChunks.length; i += EmbeddingConfig.batchSize) {
+      const batch = pendingChunks.slice(i, i + EmbeddingConfig.batchSize);
       await this.processBatchWithRetries(batch, documentId);
     }
 
@@ -89,12 +72,13 @@ export class EmbeddingQueue {
     for (const chunk of chunks) {
       const cached = await EmbeddingRepository.checkCache(
         chunk.contentHash,
-        'Transformers.js',
-        'Xenova/all-MiniLM-L6-v2'
+        EmbeddingConfig.provider,
+        EmbeddingConfig.modelName
       );
       if (cached) {
         console.log(`[EmbeddingQueue] Cache hit for chunk ${chunk.id}`);
         // Create a copy of the cached embedding for this specific chunk
+        EmbeddingStats.recordCachedEmbedding();
         cachedEmbeddings.push({
           ...cached,
           embeddingId: crypto.randomUUID(),
@@ -122,44 +106,55 @@ export class EmbeddingQueue {
 
     // 2. Process Remaining with Retries
     let attempt = 0;
-    while (attempt <= this.config.maxRetries) {
+    while (attempt <= EmbeddingConfig.maxRetries) {
       try {
         const result = await this.dispatchToWorker(chunksToEmbed);
+        const processingTime = result.processingTime / chunksToEmbed.length;
 
         const newEmbeddings: EmbeddingEntity[] = result.vectors.map(
-          (vec: number[], idx: number) => ({
-            schemaVersion: 1,
-            embeddingId: crypto.randomUUID(),
-            chunkId: chunksToEmbed[idx].id,
-            documentId,
-            provider: result.provider,
-            model: result.model,
-            dimensions: result.dimensions,
-            vector: vec,
-            createdAt: Date.now(),
-            processingTime: result.processingTime / chunksToEmbed.length, // Average per chunk
-            status: 'ACTIVE',
-          })
+          (vec: number[], idx: number) => {
+            EmbeddingStats.recordNewEmbedding(processingTime);
+            return {
+              schemaVersion: EmbeddingConfig.schemaVersion,
+              embeddingId: crypto.randomUUID(),
+              chunkId: chunksToEmbed[idx].id,
+              documentId,
+              provider: result.provider,
+              model: result.model,
+              dimensions: result.dimensions,
+              vector: vec,
+              vectorNorm: result.vectorNorms[idx],
+              embeddingVersion: '1.0',
+              providerVersion: '1.0',
+              modelVersion: '1.0',
+              createdAt: Date.now(),
+              lastValidatedAt: Date.now(),
+              processingTime: processingTime,
+              status: 'ACTIVE',
+            };
+          }
         );
 
         await EmbeddingRepository.bulkInsert(newEmbeddings);
+        EmbeddingStats.recordBatch(result.processingTime);
 
         chunksToEmbed.forEach((c) => (c.status = 'EMBEDDED'));
         await ChunkRepository.saveAll(chunksToEmbed);
         return;
       } catch (error) {
+        EmbeddingStats.recordFailure();
         attempt++;
+        if (attempt > 1) EmbeddingStats.recordRetry();
         console.warn(
-          `[EmbeddingQueue] Batch failed, attempt ${attempt}/${this.config.maxRetries}`,
+          `[EmbeddingQueue] Batch failed, attempt ${attempt}/${EmbeddingConfig.maxRetries}`,
           error
         );
-        if (attempt > this.config.maxRetries) {
+        if (attempt > EmbeddingConfig.maxRetries) {
           console.error(`[EmbeddingQueue] Batch permanently failed.`);
-          // Status stays PENDING or we could introduce FAILED state
           throw error;
         }
         await new Promise((res) =>
-          setTimeout(res, this.config.retryDelay * Math.pow(2, attempt - 1))
+          setTimeout(res, EmbeddingConfig.retryDelay * Math.pow(2, attempt - 1))
         ); // Exponential backoff
       }
     }
@@ -176,7 +171,7 @@ export class EmbeddingQueue {
           this.jobResolvers.delete(jobId);
           reject(new Error('Worker timeout'));
         }
-      }, this.config.timeout);
+      }, EmbeddingConfig.timeout);
 
       this.worker.postMessage({
         type: 'BATCH_EMBED',
