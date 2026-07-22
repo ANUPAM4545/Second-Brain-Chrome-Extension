@@ -1,15 +1,5 @@
-import { pipeline, env, FeatureExtractionPipeline } from '@xenova/transformers';
+import type { FeatureExtractionPipeline } from '@xenova/transformers';
 import type { EmbeddingProvider } from './EmbeddingProvider';
-
-// Optimize environment for browser execution
-env.allowLocalModels = false;
-env.useBrowserCache = true;
-
-// Disable web workers to prevent blob: CSP violations in Chrome Extensions
-env.backends.onnx.wasm.numThreads = 1;
-if (env.backends.onnx.wasm.proxy !== undefined) {
-  env.backends.onnx.wasm.proxy = false;
-}
 
 let globalExtractor: FeatureExtractionPipeline | null = null;
 let globalInitializingPromise: Promise<void> | null = null;
@@ -44,7 +34,28 @@ export class TransformersProvider implements EmbeddingProvider {
             this.onProgress({ status: 'loading', model: this.modelName });
           }
 
-          globalExtractor = await pipeline('feature-extraction', this.modelName, {
+          // Polyfill for onnxruntime-web in Chrome Extension Service Workers
+          if (typeof document === 'undefined') {
+            (globalThis as any).document = {
+              createElement: () => ({}),
+              baseURI: '',
+              currentScript: null,
+            };
+          }
+
+          const xenova = await import('@xenova/transformers');
+          
+          // Optimize environment for browser execution
+          xenova.env.allowLocalModels = false;
+          xenova.env.useBrowserCache = true;
+          
+          // Disable web workers to prevent blob: CSP violations in Chrome Extensions
+          xenova.env.backends.onnx.wasm.numThreads = 1;
+          if (xenova.env.backends.onnx.wasm.proxy !== undefined) {
+            xenova.env.backends.onnx.wasm.proxy = false;
+          }
+
+          globalExtractor = await xenova.pipeline('feature-extraction', this.modelName, {
             progress_callback: this.onProgress,
           });
 
