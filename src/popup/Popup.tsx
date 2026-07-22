@@ -4,6 +4,7 @@ import { CitationsAccordion } from './components/CitationsAccordion';
 import { DevModePanel } from './components/DevModePanel';
 import { KnowledgeDashboard } from './components/KnowledgeDashboard';
 import { RecentActivity } from './components/RecentActivity';
+import { useCurrentPage } from './hooks/useCurrentPage';
 import { SettingsConfig } from '../config/SettingsConfig';
 import type { AppSettings } from '../config/SettingsConfig';
 import { LLMProviderFactory } from '../ai/llm/LLMProviderFactory';
@@ -31,6 +32,8 @@ export const Popup = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [timings, setTimings] = useState({ retrievalMs: 0, generationMs: 0 });
 
+  const { document: currentDoc } = useCurrentPage();
+
   const endOfStreamRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,10 +48,21 @@ export const Popup = () => {
 
   const handleAsk = useCallback(async (e?: React.FormEvent, directQuery?: string) => {
     if (e) e.preventDefault();
-    const targetQuery = directQuery || query;
+    let targetQuery = directQuery || query;
     if (!targetQuery.trim()) return;
 
-    setLastQuery(targetQuery);
+    // Automatically scope to current page if the user asks about it
+    const lowerQuery = targetQuery.toLowerCase();
+    if (
+      currentDoc &&
+      (lowerQuery.includes('this page') || lowerQuery.includes('this article') || lowerQuery.includes('here'))
+    ) {
+      if (!lowerQuery.includes('docid:')) {
+        targetQuery += ` docId:${currentDoc.id}`;
+      }
+    }
+
+    setLastQuery(targetQuery.replace(/ docId:[a-zA-Z0-9.-]+/, '')); // Don't show the internal filter string to the user
     if (!directQuery) setQuery('');
     
     setIsStreaming(true);
@@ -91,7 +105,7 @@ export const Popup = () => {
     } finally {
       setIsStreaming(false);
     }
-  }, [query]);
+  }, [query, currentDoc]);
 
   const openOptions = useCallback(() => {
     if (chrome.runtime && chrome.runtime.openOptionsPage) {
@@ -164,7 +178,13 @@ export const Popup = () => {
                 
                 <div className="text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap">
                   {streamingText}
-                  {isStreaming && (
+                  {isStreaming && !streamingText && (
+                    <span className="text-gray-400 italic text-sm flex items-center">
+                      Initializing embedding model (first time takes longer)...
+                      <span className="inline-block w-2 h-4 ml-2 bg-primary animate-pulse rounded-sm"></span>
+                    </span>
+                  )}
+                  {isStreaming && streamingText && (
                     <span className="inline-block w-2 h-4 ml-1 align-middle bg-primary animate-pulse rounded-sm"></span>
                   )}
                 </div>

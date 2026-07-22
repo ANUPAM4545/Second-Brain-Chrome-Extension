@@ -5,6 +5,8 @@ export interface RetrievalRequest {
   filter?: {
     domain?: string;
     language?: string;
+    documentId?: string;
+    intent?: string;
     dateRange?: { start?: number; end?: number };
   };
 }

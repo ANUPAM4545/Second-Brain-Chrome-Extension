@@ -35,6 +35,9 @@ export class SparseRetrievalProvider implements RetrievalProvider {
         if (request.filter?.language && chunk.language !== request.filter.language) {
           continue;
         }
+        if (request.filter?.documentId && chunk.documentId !== request.filter.documentId) {
+          continue;
+        }
 
         results.push({
           chunkId: chunk.id,

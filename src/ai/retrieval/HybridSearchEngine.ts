@@ -29,6 +29,37 @@ export class HybridSearchEngine {
 
     // 1. Preprocess Query
     const request = QueryProcessor.process(rawQuery);
+    
+    // SUMMARIZATION BYPASS: If they want to summarize a specific page, just fetch the first K chunks directly.
+    if (request.filter?.intent === 'SUMMARIZATION' && request.filter?.documentId) {
+      const { db } = await import('../../storage/db');
+      
+      // For a full page summary, we want enough chunks to fill the token budget (e.g. 50 chunks)
+      const summarizationLimit = Math.max(topK, 50);
+      
+      const allChunks = await db.chunks
+        .where('documentId')
+        .equals(request.filter.documentId)
+        .toArray();
+        
+      // Filter out tiny chunks (like infobox cells, navigation links, metadata)
+      // and sort by chunkIndex to maintain reading order
+      const substantialChunks = allChunks
+        .filter(c => c.wordCount > 20)
+        .sort((a, b) => a.chunkIndex - b.chunkIndex);
+        
+      const finalResults: RetrievalResult[] = substantialChunks.slice(0, summarizationLimit).map((chunk) => ({
+        chunkId: chunk.id,
+        documentId: chunk.documentId,
+        score: 1.0,
+        text: chunk.text,
+        metadata: { heading: chunk.heading, hierarchy: chunk.hierarchy },
+      }));
+      
+      RetrievalMetrics.record(rawQuery, 0, 0, 0, finalResults.length);
+      return finalResults;
+    }
+
     request.topK = Math.max(topK * 2, 50); // Fetch more for fusion
 
     // 2. Generate Query Embedding

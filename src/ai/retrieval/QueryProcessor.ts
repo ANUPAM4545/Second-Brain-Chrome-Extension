@@ -177,6 +177,12 @@ export class QueryProcessor {
       queryText = queryText.replace(langMatch[0], '');
     }
 
+    const docIdMatch = queryText.match(/docId:([a-zA-Z0-9.-]+)/);
+    if (docIdMatch) {
+      filters.documentId = docIdMatch[1];
+      queryText = queryText.replace(docIdMatch[0], '');
+    }
+
     // 2. Phrase detection ("exact phrase")
     const phrases: string[] = [];
     const phraseRegex = /"([^"]+)"/g;
