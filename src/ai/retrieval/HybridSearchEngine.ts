@@ -42,6 +42,8 @@ export class HybridSearchEngine {
         .equals(request.filter.documentId)
         .toArray();
         
+      const doc = await db.documents.get(request.filter.documentId);
+        
       // Filter out tiny chunks (like infobox cells, navigation links, metadata)
       // and sort by chunkIndex to maintain reading order
       const substantialChunks = allChunks
@@ -53,7 +55,12 @@ export class HybridSearchEngine {
         documentId: chunk.documentId,
         score: 1.0,
         text: chunk.text,
-        metadata: { heading: chunk.heading, hierarchy: chunk.hierarchy },
+        metadata: { 
+          heading: chunk.heading, 
+          hierarchy: chunk.hierarchy,
+          title: doc?.title,
+          url: doc?.url
+        },
       }));
       
       RetrievalMetrics.record(rawQuery, 0, 0, 0, finalResults.length);
@@ -111,6 +118,18 @@ export class HybridSearchEngine {
         score: fusionScores.get(id)!, // Replace original score with WRRF score
       };
     });
+
+    const { db } = await import('../../storage/db');
+    for (const result of finalResults) {
+      const doc = await db.documents.get(result.documentId);
+      if (doc) {
+        result.metadata = {
+          ...result.metadata,
+          title: doc.title,
+          url: doc.url,
+        };
+      }
+    }
 
     const fusionTime = performance.now() - fusionStart;
 
