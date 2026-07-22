@@ -38,6 +38,7 @@ export class TransformersProvider implements EmbeddingProvider {
           if (typeof document === 'undefined') {
             (globalThis as any).document = {
               createElement: () => ({}),
+              getElementsByTagName: () => [],
               baseURI: '',
               currentScript: null,
             };
@@ -47,12 +48,15 @@ export class TransformersProvider implements EmbeddingProvider {
           
           // Optimize environment for browser execution
           xenova.env.allowLocalModels = false;
-          xenova.env.useBrowserCache = true;
+          // Use browser cache if available in the environment (e.g. not in Happy DOM tests)
+          xenova.env.useBrowserCache = typeof caches !== 'undefined';
           
           // Disable web workers to prevent blob: CSP violations in Chrome Extensions
-          xenova.env.backends.onnx.wasm.numThreads = 1;
-          if (xenova.env.backends.onnx.wasm.proxy !== undefined) {
-            xenova.env.backends.onnx.wasm.proxy = false;
+          if (xenova.env.backends?.onnx?.wasm) {
+            xenova.env.backends.onnx.wasm.numThreads = 1;
+            if (xenova.env.backends.onnx.wasm.proxy !== undefined) {
+              xenova.env.backends.onnx.wasm.proxy = false;
+            }
           }
 
           globalExtractor = await xenova.pipeline('feature-extraction', this.modelName, {

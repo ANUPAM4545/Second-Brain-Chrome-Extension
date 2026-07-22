@@ -2,6 +2,7 @@
 if (typeof document === 'undefined') {
   (globalThis as any).document = {
     createElement: () => ({}),
+    getElementsByTagName: () => [],
     baseURI: '',
     currentScript: null,
   };
