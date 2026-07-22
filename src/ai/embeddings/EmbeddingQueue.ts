@@ -7,41 +7,19 @@ import type { ChunkEntity, EmbeddingEntity } from '../../shared/types';
 import { EmbeddingConfig } from '../../config/EmbeddingConfig';
 import { EmbeddingStats } from '../../metrics/EmbeddingStats';
 
+import { TransformersProvider } from './TransformersProvider';
+import { VectorValidation } from './Validation';
+
 export class EmbeddingQueue {
-  private worker: Worker;
-  private jobResolvers: Map<string, { resolve: (val: any) => void; reject: (err: any) => void }> =
-    new Map();
+  private provider: TransformersProvider;
 
   constructor() {
-    this.worker = new Worker(new URL('../../workers/embedding.worker.ts', import.meta.url), {
-      type: 'module',
+    this.provider = new TransformersProvider('Xenova/all-MiniLM-L6-v2', 384, (_progress) => {
+
     });
-
-    this.worker.onmessage = (e) => this.handleWorkerMessage(e);
   }
 
-  private handleWorkerMessage(e: MessageEvent) {
-    const { type, payload } = e.data;
 
-    if (type === 'EMBED_PROGRESS') {
-      console.log('[Embedding Progress]', payload);
-      return;
-    }
-
-    if (type === 'BATCH_SUCCESS') {
-      const resolver = this.jobResolvers.get(payload.jobId);
-      if (resolver) {
-        resolver.resolve(payload);
-        this.jobResolvers.delete(payload.jobId);
-      }
-    } else if (type === 'BATCH_FAILED') {
-      const resolver = this.jobResolvers.get(payload.jobId);
-      if (resolver) {
-        resolver.reject(new Error(payload.error));
-        this.jobResolvers.delete(payload.jobId);
-      }
-    }
-  }
 
   /**
    * Triggers the queue to process all PENDING chunks for a given document.
@@ -76,7 +54,7 @@ export class EmbeddingQueue {
         EmbeddingConfig.modelName
       );
       if (cached) {
-        console.log(`[EmbeddingQueue] Cache hit for chunk ${chunk.id}`);
+
         // Create a copy of the cached embedding for this specific chunk
         EmbeddingStats.recordCachedEmbedding();
         cachedEmbeddings.push({
@@ -160,24 +138,35 @@ export class EmbeddingQueue {
     }
   }
 
-  private dispatchToWorker(chunks: ChunkEntity[]): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const jobId = crypto.randomUUID();
-      this.jobResolvers.set(jobId, { resolve, reject });
+  private async dispatchToWorker(chunks: ChunkEntity[]): Promise<any> {
+    try {
+      const texts = chunks.map((c) => c.text);
+      const startTime = performance.now();
+      const vectors = await this.provider.embedBatch(texts);
+      const processingTime = performance.now() - startTime;
 
-      // Implement timeout logic
-      setTimeout(() => {
-        if (this.jobResolvers.has(jobId)) {
-          this.jobResolvers.delete(jobId);
-          reject(new Error('Worker timeout'));
-        }
-      }, EmbeddingConfig.timeout);
+      const expectedDim = this.provider.getDimensions();
+      const model = this.provider.getModelName();
+      const providerName = this.provider.getProviderName();
 
-      this.worker.postMessage({
-        type: 'BATCH_EMBED',
-        payload: { jobId, chunks },
-      });
-    });
+      VectorValidation.validateBatch(vectors, expectedDim);
+
+      const vectorNorms = vectors.map((vec) =>
+        Math.sqrt(vec.reduce((sum: number, val: number) => sum + val * val, 0))
+      );
+
+      return {
+        vectors,
+        vectorNorms,
+        model,
+        provider: providerName,
+        dimensions: expectedDim,
+        processingTime,
+      };
+    } catch (error: any) {
+      console.error('[EmbeddingQueue] Batch failed:', error);
+      throw new Error(error.message);
+    }
   }
 
   private async markDocumentIndexed(documentId: string) {
@@ -185,7 +174,7 @@ export class EmbeddingQueue {
     if (doc) {
       doc.status = DocumentStatus.INDEXED; // Complete the milestone flow
       await DocumentRepository.save(doc);
-      console.log(`[EmbeddingQueue] Document ${documentId} successfully INDEXED.`);
+
     }
   }
 }

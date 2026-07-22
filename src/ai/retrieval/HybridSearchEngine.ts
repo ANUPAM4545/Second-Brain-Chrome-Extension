@@ -20,12 +20,12 @@ export class HybridSearchEngine {
   }
 
   async initialize() {
-    console.log('[HybridSearchEngine] Initializing providers...');
+
     await Promise.all([this.dense.initialize(), this.sparse.initialize()]);
   }
 
   async search(rawQuery: string, topK: number = 10): Promise<RetrievalResult[]> {
-    const startTime = performance.now();
+
 
     // 1. Preprocess Query
     const request = QueryProcessor.process(rawQuery);
@@ -86,9 +86,6 @@ export class HybridSearchEngine {
     // Record Metrics
     RetrievalMetrics.record(rawQuery, denseTime, sparseTime, fusionTime, finalResults.length);
 
-    console.log(
-      `[HybridSearchEngine] Search completed in ${(performance.now() - startTime).toFixed(2)}ms`
-    );
     return finalResults;
   }
 }

@@ -5,6 +5,12 @@ import type { EmbeddingProvider } from './EmbeddingProvider';
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
+// Disable web workers to prevent blob: CSP violations in Chrome Extensions
+env.backends.onnx.wasm.numThreads = 1;
+if (env.backends.onnx.wasm.proxy !== undefined) {
+  env.backends.onnx.wasm.proxy = false;
+}
+
 export class TransformersProvider implements EmbeddingProvider {
   private modelName: string;
   private dimensions: number;

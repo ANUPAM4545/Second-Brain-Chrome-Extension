@@ -3,7 +3,7 @@ import { SettingsConfig } from '../../config/SettingsConfig';
 
 export class GeminiProvider implements LLMProvider {
   private apiKey: string = '';
-  private modelName: string = 'gemini-1.5-flash';
+  private modelName: string = 'gemini-3.5-flash';
   private baseUrl: string = 'https://generativelanguage.googleapis.com/v1beta/models';
 
   async initialize(): Promise<void> {
@@ -12,6 +12,7 @@ export class GeminiProvider implements LLMProvider {
       throw new Error('Gemini API Key is missing. Please configure it in the Extension Settings.');
     }
     this.apiKey = settings.geminiApiKey;
+    this.modelName = settings.geminiModel || 'gemini-3.5-flash';
   }
 
   private buildPayload(request: GenerationRequest) {
@@ -147,14 +148,26 @@ export class GeminiProvider implements LLMProvider {
         return { status: 'DEGRADED', message: 'API Key missing' };
       }
       
-      // Simple lightweight check to see if the API key is somewhat valid by calling models.get
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.modelName}?key=${settings.geminiApiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${settings.geminiApiKey}`;
       const res = await fetch(url);
       
       if (res.ok) {
-        return { status: 'OK', modelName: this.modelName };
+        const data = await res.json();
+        const models = data.models || [];
+        const targetModelId = `models/${this.modelName}`;
+        const found = models.find((m: any) => m.name === targetModelId);
+        
+        if (found) {
+          if (!found.supportedGenerationMethods.includes('generateContent')) {
+            return { status: 'FAILED', message: `Model exists but does not support generateContent`, modelName: this.modelName };
+          }
+          return { status: 'OK', modelName: this.modelName };
+        } else {
+          return { status: 'FAILED', message: `Model ${this.modelName} not found in available models. Try 'gemini-pro'.`, modelName: this.modelName };
+        }
       } else {
-        return { status: 'FAILED', message: `HTTP ${res.status}`, modelName: this.modelName };
+        const errorText = await res.text();
+        return { status: 'FAILED', message: `HTTP ${res.status} ${errorText}`, modelName: this.modelName };
       }
     } catch (e: any) {
       return { status: 'FAILED', message: e.message, modelName: this.modelName };

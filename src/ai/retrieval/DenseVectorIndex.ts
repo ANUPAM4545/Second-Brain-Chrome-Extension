@@ -19,7 +19,7 @@ export class DenseVectorIndex {
     if (!this.loadingPromise) {
       this.loadingPromise = (async () => {
         try {
-          console.log('[DenseVectorIndex] Loading vectors into memory...');
+
           const allEmbeddings = await db.embeddings.filter((e) => e.status === 'ACTIVE').toArray();
 
           this.vectors = allEmbeddings.map((e) => ({
@@ -30,7 +30,7 @@ export class DenseVectorIndex {
           }));
 
           this.isLoaded = true;
-          console.log(`[DenseVectorIndex] Loaded ${this.vectors.length} vectors.`);
+
         } catch (error) {
           console.error('[DenseVectorIndex] Failed to load index:', error);
           this.loadingPromise = null;

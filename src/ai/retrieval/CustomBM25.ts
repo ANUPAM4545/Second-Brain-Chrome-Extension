@@ -195,14 +195,14 @@ export class CustomBM25 {
   }
 
   tokenize(text: string): string[] {
-    const tokens = text.toLowerCase().match(/\b\w+\b/g) || [];
+    const tokens: string[] = text.toLowerCase().match(/\b\w+\b/g) || [];
     return tokens.filter((t) => !CustomBM25.STOPWORDS.has(t) && t.length > 1);
   }
 
   async buildIndex(): Promise<void> {
     if (this.isLoaded) return;
 
-    console.log('[CustomBM25] Building inverted index...');
+
 
     const chunks = await db.chunks.toArray(); // In production, iterate via cursor for huge DBs
     this.totalDocuments = chunks.length;
@@ -228,7 +228,7 @@ export class CustomBM25 {
 
     this.averageDocumentLength = this.totalDocuments > 0 ? totalLength / this.totalDocuments : 0;
     this.isLoaded = true;
-    console.log(`[CustomBM25] Index built for ${this.totalDocuments} chunks.`);
+
   }
 
   /**

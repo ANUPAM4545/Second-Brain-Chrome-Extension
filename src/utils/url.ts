@@ -73,7 +73,7 @@ export class URLNormalizer {
         normalizedUrl,
         canonicalUrl,
       };
-    } catch (e) {
+    } catch {
       // If invalid URL, fallback to raw
       return {
         originalUrl: rawUrl,

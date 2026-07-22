@@ -35,9 +35,7 @@ export class DeduplicationEngine {
 
     // 1. Exact Duplicate Check (Canonical Hash)
     if (incomingDoc.contentHash === latestExisting.contentHash) {
-      console.log(
-        `[DeduplicationEngine] Exact duplicate found for ${incomingDoc.url}. Incrementing visit count.`
-      );
+
 
       latestExisting.visitCount += 1;
       latestExisting.lastVisitTime = incomingDoc.captureTime; // Update visit time
@@ -57,9 +55,7 @@ export class DeduplicationEngine {
 
     // Whether it's a minor near-duplicate or a major rewrite, if the URL matches but hash differs,
     // we consider it a new version of the same canonical source.
-    console.log(
-      `[DeduplicationEngine] Content updated for ${incomingDoc.url}. Similarity: ${similarity.score}`
-    );
+
 
     incomingDoc.versionNumber = latestExisting.versionNumber + 1;
     incomingDoc.parentDocumentId = latestExisting.parentDocumentId || latestExisting.id;
