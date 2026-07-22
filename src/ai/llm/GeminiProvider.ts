@@ -105,14 +105,24 @@ export class GeminiProvider implements LLMProvider {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\\n');
-      buffer = lines.pop() || ''; // Keep the last incomplete line in the buffer
+      
+      // Process complete SSE events separated by double newlines
+      while (buffer.includes('\n\n') || buffer.includes('\r\n\r\n')) {
+        const separator = buffer.includes('\r\n\r\n') ? '\r\n\r\n' : '\n\n';
+        const eventEndIndex = buffer.indexOf(separator);
+        const eventData = buffer.substring(0, eventEndIndex);
+        buffer = buffer.substring(eventEndIndex + separator.length);
 
-      for (const line of lines) {
-        if (line.trim().startsWith('data: ')) {
-          const dataStr = line.replace('data: ', '').trim();
+        const dataLines = eventData
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.startsWith('data: '))
+          .map(line => line.replace('data: ', ''));
+
+        if (dataLines.length > 0) {
+          const dataStr = dataLines.join('\n').trim();
           if (dataStr === '[DONE]') break;
-          
+
           try {
             const data = JSON.parse(dataStr);
             const candidate = data.candidates?.[0];
@@ -131,7 +141,7 @@ export class GeminiProvider implements LLMProvider {
               };
             }
           } catch (err) {
-            console.warn('Failed to parse Gemini SSE chunk', err);
+            console.warn('Failed to parse Gemini SSE chunk', err, dataStr);
           }
         }
       }
