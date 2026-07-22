@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../storage/db';
 import type { DocumentEntity } from '../../shared/types';
+import { URLNormalizer } from '../../utils/url';
 
 export interface CurrentPageInfo {
   url: string | null;
@@ -21,10 +22,8 @@ export const useCurrentPage = (): CurrentPageInfo => {
         if (chrome && chrome.tabs) {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           if (tab && tab.url && !tab.url.startsWith('chrome://')) {
-            // Basic normalization to match backend
-            const urlObj = new URL(tab.url);
-            urlObj.hash = '';
-            const normalized = urlObj.toString();
+            // Use the exact same normalizer as the backend
+            const normalized = URLNormalizer.normalize(tab.url).normalizedUrl;
             setCurrentUrl(normalized);
             setCurrentTitle(tab.title || null);
           }
