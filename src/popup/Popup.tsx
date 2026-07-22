@@ -1,16 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ConfidenceBadge } from './components/ConfidenceBadge';
 import { CitationsAccordion } from './components/CitationsAccordion';
 import { DevModePanel } from './components/DevModePanel';
+import { KnowledgeDashboard } from './components/KnowledgeDashboard';
+import { RecentActivity } from './components/RecentActivity';
 import { SettingsConfig } from '../config/SettingsConfig';
 import type { AppSettings } from '../config/SettingsConfig';
 import { LLMProviderFactory } from '../ai/llm/LLMProviderFactory';
 import { RAGPipeline } from '../ai/rag/RAGPipeline';
 import type { RAGResponse } from '../ai/rag/RAGPipeline';
 import { HybridSearchEngine } from '../ai/retrieval/HybridSearchEngine';
+import { Header } from '../components/layout/Header';
+import { Spinner } from '../components/ui/Spinner';
+import { Input } from '../components/ui/Input';
+import { Button } from '../components/ui/Button';
+
+const SUGGESTIONS = [
+  "What is React Server Components?",
+  "Summarize this article.",
+  "Compare Vite and Webpack."
+];
 
 export const Popup = () => {
   const [query, setQuery] = useState('');
+  const [lastQuery, setLastQuery] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [finalResult, setFinalResult] = useState<RAGResponse | null>(null);
@@ -30,10 +43,14 @@ export const Popup = () => {
     }
   }, [streamingText, isStreaming]);
 
-  const handleAsk = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim()) return;
+  const handleAsk = useCallback(async (e?: React.FormEvent, directQuery?: string) => {
+    if (e) e.preventDefault();
+    const targetQuery = directQuery || query;
+    if (!targetQuery.trim()) return;
 
+    setLastQuery(targetQuery);
+    if (!directQuery) setQuery('');
+    
     setIsStreaming(true);
     setStreamingText('');
     setFinalResult(null);
@@ -50,7 +67,7 @@ export const Popup = () => {
       
       const pipeline = new RAGPipeline(searchEngine, llmProvider);
       
-      const stream = pipeline.streamAnswer(query);
+      const stream = pipeline.streamAnswer(targetQuery);
       
       for await (const msg of stream) {
         if (!retrievalTime) {
@@ -74,159 +91,169 @@ export const Popup = () => {
     } finally {
       setIsStreaming(false);
     }
-  };
+  }, [query]);
 
-  const openOptions = () => {
+  const openOptions = useCallback(() => {
     if (chrome.runtime && chrome.runtime.openOptionsPage) {
       chrome.runtime.openOptionsPage();
     } else {
       window.open('options.html', '_blank');
     }
-  };
+  }, []);
 
-  if (!settings) return <div className="p-4 text-sm text-gray-500">Loading extension core...</div>;
+  const cancelGeneration = useCallback(() => {
+    // Future: Abort controller logic
+    window.location.reload();
+  }, []);
 
-  return (
-    <div className="w-[450px] min-h-[500px] max-h-[600px] flex flex-col bg-white text-gray-900 font-sans shadow-xl">
-      {/* Header */}
-      <div className="bg-blue-600 text-white p-4 flex justify-between items-center shadow-md z-10 relative">
-        <h1 className="font-bold text-lg flex items-center space-x-2">
-          <svg className="w-5 h-5 text-blue-200" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM9 11V9h2v6H9v-4zm0-6h2v2H9V5z" />
-          </svg>
-          <span>Second Brain AI</span>
-        </h1>
-        <button
-          onClick={openOptions}
-          className="p-1.5 hover:bg-blue-700 rounded transition text-blue-100 hover:text-white"
-          title="Settings"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-            />
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-            />
-          </svg>
-        </button>
+  if (!settings) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-background">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  const renderEmptyState = () => (
+    <div className="flex-1 flex flex-col w-full">
+      <KnowledgeDashboard />
+      <div className="mt-6 flex flex-col space-y-2 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider pl-1">Suggestions</span>
+        {SUGGESTIONS.map((suggestion, idx) => (
+          <button
+            key={idx}
+            onClick={() => handleAsk(undefined, suggestion)}
+            className="text-left px-4 py-2.5 bg-surface border border-border hover:border-primary/50 hover:bg-surface-hover rounded-xl text-sm text-gray-700 transition-all group"
+          >
+            <span className="group-hover:text-primary transition-colors">"{suggestion}"</span>
+          </button>
+        ))}
+      </div>
+      <RecentActivity />
+    </div>
+  );
+
+  const renderChatArea = () => (
+    <div className="flex flex-col space-y-6 animate-fade-in">
+      <div className="flex justify-end">
+        <div className="bg-primary text-white px-5 py-3 rounded-2xl rounded-tr-sm max-w-[85%] shadow-lg shadow-primary/20 text-[15px] leading-relaxed">
+          {lastQuery}
+        </div>
       </div>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 overflow-y-auto p-4 bg-gray-50 flex flex-col space-y-4">
-        {/* Empty State */}
-        {!streamingText && !error && !isStreaming && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-8 text-gray-500">
-            <svg
-              className="w-12 h-12 text-gray-300 mb-3"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1}
-                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-              />
-            </svg>
-            <p className="text-sm">
-              Ask your Second Brain anything about the pages you've indexed.
-            </p>
-          </div>
-        )}
-
-        {/* Error State */}
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex items-start">
-            <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <span className="flex-1">{error}</span>
-          </div>
-        )}
-
-        {/* Streaming/Answer Area */}
-        {(streamingText || isStreaming) && (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm animate-fadeIn">
-            {finalResult && (
-              <div className="mb-3 flex items-center justify-between border-b pb-2">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Answer Generated
-                </span>
-                <ConfidenceBadge
-                  score={finalResult.confidence.score}
-                  level={finalResult.confidence.level as 'High' | 'Medium' | 'Low'}
-                />
+      {(streamingText || isStreaming || error) && (
+        <div className="flex justify-start">
+          <div className="bg-surface border border-border px-5 py-5 rounded-2xl rounded-tl-sm w-[95%] shadow-lg">
+            {error ? (
+              <div className="text-danger text-sm flex items-start bg-danger/10 p-3 rounded-lg border border-danger/20">
+                <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <span className="flex-1 font-medium">{error}</span>
               </div>
+            ) : (
+              <>
+                {finalResult && (
+                  <div className="mb-4 flex items-center justify-between border-b border-border pb-3">
+                    <ConfidenceBadge
+                      score={finalResult.confidence.score}
+                      level={finalResult.confidence.level as 'High' | 'Medium' | 'Low'}
+                    />
+                  </div>
+                )}
+                
+                <div className="text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap">
+                  {streamingText}
+                  {isStreaming && (
+                    <span className="inline-block w-2 h-4 ml-1 align-middle bg-primary animate-pulse rounded-sm"></span>
+                  )}
+                </div>
+                
+                {finalResult && (
+                  <div className="mt-5 pt-4 border-t border-border">
+                    <div className="grid grid-cols-4 gap-2 text-center mb-4 bg-background rounded-lg p-2 border border-border">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-gray-400 uppercase tracking-widest font-semibold">Retrieval</span>
+                        <span className="text-xs text-gray-700 font-mono">{timings.retrievalMs}ms</span>
+                      </div>
+                      <div className="flex flex-col border-l border-border">
+                        <span className="text-[9px] text-gray-400 uppercase tracking-widest font-semibold">Generation</span>
+                        <span className="text-xs text-gray-700 font-mono">{timings.generationMs}ms</span>
+                      </div>
+                      <div className="flex flex-col border-l border-border">
+                        <span className="text-[9px] text-gray-400 uppercase tracking-widest font-semibold">Chunks</span>
+                        <span className="text-xs text-gray-700 font-mono">{finalResult.citations.size}</span>
+                      </div>
+                      <div className="flex flex-col border-l border-border">
+                        <span className="text-[9px] text-gray-400 uppercase tracking-widest font-semibold">Provider</span>
+                        <span className="text-xs text-gray-700 capitalize">{settings.llmProvider}</span>
+                      </div>
+                    </div>
+                    
+                    <CitationsAccordion citations={finalResult.citations} />
+                  </div>
+                )}
+                
+                {settings.developerMode && finalResult && (
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <DevModePanel result={finalResult} timings={timings} />
+                  </div>
+                )}
+              </>
             )}
-            <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap font-sans">
-              {streamingText}
-              {isStreaming && (
-                <span className="inline-block w-1.5 h-4 ml-1 align-middle bg-blue-500 animate-pulse"></span>
-              )}
-            </div>
-
-            {finalResult && <CitationsAccordion citations={finalResult.citations} />}
-
             <div ref={endOfStreamRef} />
           </div>
-        )}
+        </div>
+      )}
+    </div>
+  );
 
-        {/* Dev Mode Panel */}
-        {settings.developerMode && finalResult && (
-          <DevModePanel result={finalResult} timings={timings} />
-        )}
+  return (
+    <div className="w-full h-full flex flex-col bg-background text-gray-900 font-sans shadow-2xl relative overflow-hidden">
+      <Header 
+        title="Second Brain"
+        providerName={settings.llmProvider === 'gemini' ? 'Gemini 1.5' : 'Mock Provider'}
+        onOptionsClick={openOptions}
+      />
+
+      <div className="flex-1 overflow-y-auto p-5 flex flex-col space-y-6 relative z-10">
+        {!lastQuery && !error && !isStreaming ? renderEmptyState() : renderChatArea()}
       </div>
 
-      {/* Input Area */}
-      <div className="p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <form onSubmit={handleAsk} className="relative">
-          <input
-            type="text"
-            placeholder="Ask a question..."
+      <div className="p-4 bg-surface border-t border-border z-20">
+        <form onSubmit={handleAsk} className="relative flex items-center">
+          <Input
+            placeholder="Ask anything about your indexed knowledge..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             disabled={isStreaming}
-            className="w-full pl-4 pr-12 py-3 bg-gray-100 border-transparent rounded-full focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none text-sm disabled:opacity-50"
           />
-          <button
-            type="submit"
-            disabled={isStreaming || !query.trim()}
-            className="absolute right-2 top-2 p-1.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
             {isStreaming ? (
-              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                ></circle>
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
+              <Button
+                variant="danger"
+                size="icon"
+                type="button"
+                onClick={cancelGeneration}
+                title="Cancel Generation"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <rect x="6" y="6" width="12" height="12" strokeWidth="2" />
+                </svg>
+              </Button>
             ) : (
-              <svg className="w-5 h-5 transform rotate-90" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-              </svg>
+              <Button
+                variant="primary"
+                size="icon"
+                type="submit"
+                disabled={!query.trim()}
+              >
+                <svg className="w-5 h-5 -ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </Button>
             )}
-          </button>
+          </div>
         </form>
       </div>
     </div>

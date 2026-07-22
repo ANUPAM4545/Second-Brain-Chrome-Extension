@@ -9,22 +9,22 @@ export const ConfidenceBadge: React.FC<ConfidenceBadgeProps> = ({ score, level }
   const getColors = () => {
     switch (level) {
       case 'High':
-        return 'bg-green-100 text-green-800 border-green-200';
+        return 'bg-success/10 text-success border-success/20';
       case 'Medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        return 'bg-warning/10 text-warning border-warning/20';
       case 'Low':
-        return 'bg-red-100 text-red-800 border-red-200';
+        return 'bg-danger/10 text-danger border-danger/20';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
+        return 'bg-gray-800 text-gray-700 border-gray-700';
     }
   };
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getColors()} cursor-help`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-widest border ${getColors()} cursor-help transition-colors`}
       title={`Confidence Score: ${(score * 100).toFixed(1)}%`}
     >
-      {level} Confidence
+      {level}
     </span>
   );
 };
