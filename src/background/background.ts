@@ -1,3 +1,4 @@
+import './polyfill';
 import type { DocumentEntity } from '../shared/types';
 import { DocumentStatus } from '../shared/types';
 import { DocumentRepository } from '../repositories/DocumentRepository';
