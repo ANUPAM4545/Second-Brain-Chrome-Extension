@@ -1,294 +1,340 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { SettingsConfig } from '../config/SettingsConfig';
 import type { AppSettings } from '../config/SettingsConfig';
 import { LLMProviderFactory } from '../ai/llm/LLMProviderFactory';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db } from '../storage/db';
+import { Button } from '../components/ui/Button';
+import { Card, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
+import { Input } from '../components/ui/Input';
+import { Spinner } from '../components/ui/Spinner';
+
+const formatBytes = (bytes: number, decimals = 2) => {
+  if (!+bytes) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+};
 
 export const Options = () => {
-  const [activeTab, setActiveTab] = useState<'general' | 'data' | 'dev'>('general');
+  const [activeTab, setActiveTab] = useState<'llm' | 'knowledge' | 'dev'>('llm');
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [stats, setStats] = useState({ docs: 0, chunks: 0, embeddings: 0 });
   const [saveStatus, setSaveStatus] = useState('');
   const [providerStatus, setProviderStatus] = useState('');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [isTesting, setIsTesting] = useState(false);
+  const [storageUsed, setStorageUsed] = useState<number>(0);
+
+  const documentCount = useLiveQuery(() => db.documents.count()) ?? 0;
+  const chunkCount = useLiveQuery(() => db.chunks.count()) ?? 0;
+  const embeddingCount = useLiveQuery(() => db.embeddings.count()) ?? 0;
 
   useEffect(() => {
     SettingsConfig.getSettings().then(setSettings);
-    loadStats();
   }, []);
 
-  const loadStats = async () => {
-    setStats({
-      docs: 0, // Mocked for UI milestone
-      chunks: 0, 
-      embeddings: 0
-    });
-  };
+  useEffect(() => {
+    const calculateStorage = async () => {
+      if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        setStorageUsed(estimate.usage || 0);
+      }
+    };
+    calculateStorage();
+  }, [documentCount, chunkCount]);
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSave = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (settings) {
       await SettingsConfig.saveSettings(settings);
-      setSaveStatus('Settings saved securely.');
+      setSaveStatus('Settings saved successfully');
       setTimeout(() => setSaveStatus(''), 3000);
     }
-  };
+  }, [settings]);
 
-  const handleTestConnection = async () => {
-    setProviderStatus('Testing...');
+  const handleTestConnection = useCallback(async () => {
+    setIsTesting(true);
+    setProviderStatus('');
+    setAvailableModels([]);
     try {
       const provider = await LLMProviderFactory.createProvider();
       await provider.initialize();
       const health = await provider.health();
-      setProviderStatus(`Status: ${health.status} (${health.modelName})`);
+      if (health.status === 'OK') {
+        setProviderStatus(`Connected to ${health.modelName}`);
+      } else {
+        setProviderStatus(`Error: ${health.message}`);
+      }
+      
+      if (settings?.geminiApiKey) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${settings.geminiApiKey}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          const models = data.models || [];
+          const validModels = models
+            .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+            .map((m: any) => m.name.replace('models/', ''));
+          setAvailableModels(validModels);
+        }
+      }
     } catch (e: any) {
       setProviderStatus(`Error: ${e.message}`);
+    } finally {
+      setIsTesting(false);
     }
-  };
+  }, [settings?.geminiApiKey]);
 
-  const handleClearData = async () => {
-    if (
-      window.confirm('Are you sure you want to delete all indexed data? This cannot be undone.')
-    ) {
-      // In a real app we'd clear IndexedDB here
-      alert('Data cleared successfully (simulated).');
-      setStats({ docs: 0, chunks: 0, embeddings: 0 });
+  const handleClearData = useCallback(async () => {
+    if (window.confirm('WARNING: This will permanently delete your entire Knowledge Base. Are you sure?')) {
+      await db.documents.clear();
+      await db.chunks.clear();
+      await db.embeddings.clear();
+      alert('Knowledge Base wiped successfully.');
     }
-  };
+  }, []);
 
-  if (!settings) return <div className="p-4">Loading settings...</div>;
+  if (!settings) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Spinner size="xl" />
+      </div>
+    );
+  }
+
+  const renderLlmTab = () => (
+    <div className="space-y-8 animate-fade-in flex-1">
+      <CardHeader className="mb-0">
+        <div>
+          <CardTitle>LLM Configuration</CardTitle>
+          <CardDescription>Configure the intelligence powering your Second Brain.</CardDescription>
+        </div>
+      </CardHeader>
+
+      <div className="space-y-6 max-w-xl">
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">Active Provider</label>
+          <select
+            className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-gray-800 focus:border-primary/50 focus:ring-1 focus:ring-primary/50 outline-none transition-all shadow-inner"
+            value={settings.llmProvider}
+            onChange={(e) => setSettings({ ...settings, llmProvider: e.target.value as 'mock' | 'gemini' })}
+          >
+            <option value="mock">Mock Provider (Fast / Local Testing)</option>
+            <option value="gemini">Google Gemini API (Cloud)</option>
+          </select>
+        </div>
+
+        {settings.llmProvider === 'gemini' && (
+          <div className="space-y-6 animate-slide-up">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Gemini API Key</label>
+              <Input
+                type="password"
+                placeholder="AIzaSy..."
+                value={settings.geminiApiKey}
+                onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
+                helperText="Stored securely in local browser storage. Never synced or logged."
+                className="font-mono"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Gemini Model</label>
+              <Input
+                type="text"
+                placeholder="gemini-3.5-flash"
+                value={settings.geminiModel}
+                onChange={(e) => setSettings({ ...settings, geminiModel: e.target.value })}
+                helperText="Specify the model identifier (e.g. gemini-3.5-flash, gemini-3.1-flash-lite)."
+                className="font-mono"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="pt-8 border-t border-border flex items-center space-x-4">
+        <Button type="submit">Save Settings</Button>
+        <Button type="button" variant="secondary" onClick={handleTestConnection} isLoading={isTesting}>
+          {isTesting ? 'Testing...' : 'Test Connection'}
+        </Button>
+        
+        {saveStatus && <span className="text-success text-sm font-medium animate-fade-in">{saveStatus}</span>}
+        {providerStatus && (
+          <span className={`text-sm font-medium animate-fade-in ${providerStatus.startsWith('Error') ? 'text-danger' : 'text-success'}`}>
+            {providerStatus}
+          </span>
+        )}
+      </div>
+      {availableModels.length > 0 && (
+        <div className="mt-4 p-4 bg-primary/5 rounded-xl border border-primary/20 animate-fade-in">
+          <p className="text-sm font-semibold text-primary mb-2">Available Models for your API Key:</p>
+          <div className="flex flex-wrap gap-2">
+            {availableModels.map(model => (
+              <button
+                key={model}
+                type="button"
+                onClick={() => setSettings({ ...settings, geminiModel: model })}
+                className="text-xs bg-surface border border-border px-3 py-1.5 rounded-lg hover:border-primary hover:text-primary transition-colors cursor-pointer"
+              >
+                {model}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 mt-3">Click on a model above to auto-fill it.</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderKnowledgeTab = () => (
+    <div className="space-y-8 animate-fade-in flex-1">
+      <CardHeader className="mb-0">
+        <div>
+          <CardTitle>Knowledge Dashboard</CardTitle>
+          <CardDescription>Monitor and manage your indexed data.</CardDescription>
+        </div>
+      </CardHeader>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card variant="metric">
+          <div className="text-primary text-[10px] font-bold uppercase tracking-widest mb-2">Documents</div>
+          <div className="text-3xl font-bold text-gray-900">{documentCount.toLocaleString()}</div>
+        </Card>
+        <Card variant="metric">
+          <div className="text-primary text-[10px] font-bold uppercase tracking-widest mb-2">Chunks</div>
+          <div className="text-3xl font-bold text-gray-900">{chunkCount.toLocaleString()}</div>
+        </Card>
+        <Card variant="metric">
+          <div className="text-primary text-[10px] font-bold uppercase tracking-widest mb-2">Embeddings</div>
+          <div className="text-3xl font-bold text-gray-900">{embeddingCount.toLocaleString()}</div>
+        </Card>
+        <Card variant="metric">
+          <div className="text-primary text-[10px] font-bold uppercase tracking-widest mb-2">Storage Used</div>
+          <div className="text-3xl font-bold text-gray-900">{formatBytes(storageUsed, 1)}</div>
+        </Card>
+      </div>
+
+      <div className="space-y-6 max-w-xl pt-6">
+        <h3 className="text-sm font-semibold text-gray-800">Retrieval Tuning</h3>
+        
+        <div className="grid grid-cols-2 gap-6">
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-gray-500">Max Chunks (Top-K)</label>
+            <Input
+              type="number" min="1" max="50"
+              value={settings.maxRetrievedChunks}
+              onChange={(e) => setSettings({ ...settings, maxRetrievedChunks: parseInt(e.target.value) || 10 })}
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-gray-500">Context Token Budget</label>
+            <Input
+              type="number" min="500" max="8000" step="500"
+              value={settings.contextTokenBudget}
+              onChange={(e) => setSettings({ ...settings, contextTokenBudget: parseInt(e.target.value) || 2000 })}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="pt-8 border-t border-border flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <Button type="submit">Save Settings</Button>
+          {saveStatus && <span className="text-success text-sm font-medium animate-fade-in">{saveStatus}</span>}
+        </div>
+        
+        <div className="flex space-x-3">
+          <Button type="button" variant="secondary">Rebuild Index</Button>
+          <Button type="button" variant="danger" onClick={handleClearData}>Clear Database</Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderDevTab = () => (
+    <div className="space-y-8 animate-fade-in flex-1">
+      <CardHeader className="mb-0">
+        <div>
+          <CardTitle>Developer Mode</CardTitle>
+          <CardDescription>Enable deep diagnostics in the popup interface.</CardDescription>
+        </div>
+      </CardHeader>
+
+      <div className="max-w-xl">
+        <label className="flex items-start space-x-4 cursor-pointer p-5 bg-background border border-border hover:border-primary/50 rounded-2xl transition-all group">
+          <div className="flex items-center h-5 mt-0.5">
+            <input
+              type="checkbox"
+              className="w-5 h-5 rounded border-gray-600 bg-surface text-primary focus:ring-primary/50 focus:ring-offset-background"
+              checked={settings.developerMode}
+              onChange={(e) => setSettings({ ...settings, developerMode: e.target.checked })}
+            />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold text-gray-800 group-hover:text-gray-900 transition-colors">Show Pipeline Trace</span>
+            <span className="text-xs text-gray-400 mt-1 leading-relaxed">
+              Displays the dense/sparse retrieval pipeline, WRRF scores, confidence breakdowns, and generation metrics directly in the popup after every answer.
+            </span>
+          </div>
+        </label>
+      </div>
+
+      <div className="pt-8 border-t border-border flex items-center space-x-4">
+        <Button type="submit">Save Settings</Button>
+        {saveStatus && <span className="text-success text-sm font-medium animate-fade-in">{saveStatus}</span>}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
-      <div className="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
-        <h1 className="text-3xl font-bold mb-8 text-blue-600">Second Brain Settings</h1>
+    <div className="min-h-screen bg-background text-gray-900 font-sans selection:bg-primary/30">
+      <div className="max-w-5xl mx-auto py-12 px-6">
+        
+        <div className="flex items-center space-x-4 mb-10">
+          <div className="w-12 h-12 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20">
+            <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M10 2a8 8 0 100 16 8 8 0 000-16zM9 11V9h2v6H9v-4zm0-6h2v2H9V5z" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Second Brain Settings</h1>
+            <p className="text-sm text-gray-500 mt-1">Manage your knowledge base and AI configuration.</p>
+          </div>
+        </div>
 
-        <div className="bg-white shadow rounded-lg flex overflow-hidden">
-          {/* Sidebar Tabs */}
-          <div className="w-1/4 bg-gray-100 border-r border-gray-200">
-            <nav className="flex flex-col">
-              <button
-                onClick={() => setActiveTab('general')}
-                className={`text-left px-6 py-4 font-medium transition-colors ${activeTab === 'general' ? 'bg-white border-l-4 border-blue-500 text-blue-700' : 'text-gray-600 hover:bg-gray-200'}`}
-              >
-                LLM Configuration
-              </button>
-              <button
-                onClick={() => setActiveTab('data')}
-                className={`text-left px-6 py-4 font-medium transition-colors ${activeTab === 'data' ? 'bg-white border-l-4 border-blue-500 text-blue-700' : 'text-gray-600 hover:bg-gray-200'}`}
-              >
-                Data Management
-              </button>
-              <button
-                onClick={() => setActiveTab('dev')}
-                className={`text-left px-6 py-4 font-medium transition-colors ${activeTab === 'dev' ? 'bg-white border-l-4 border-blue-500 text-blue-700' : 'text-gray-600 hover:bg-gray-200'}`}
-              >
-                Developer Mode
-              </button>
-            </nav>
+        <div className="flex bg-surface border border-border rounded-2xl overflow-hidden min-h-[600px] shadow-xl">
+          
+          <div className="w-64 bg-background/50 border-r border-border p-4 flex flex-col space-y-2">
+            <button
+              onClick={() => setActiveTab('llm')}
+              className={`text-left px-4 py-3 rounded-xl text-sm font-medium transition-all flex items-center ${activeTab === 'llm' ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-500 hover:text-gray-800 hover:bg-surface-hover'}`}
+            >
+              <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              LLM Provider
+            </button>
+            <button
+              onClick={() => setActiveTab('knowledge')}
+              className={`text-left px-4 py-3 rounded-xl text-sm font-medium transition-all flex items-center ${activeTab === 'knowledge' ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-500 hover:text-gray-800 hover:bg-surface-hover'}`}
+            >
+              <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>
+              Knowledge Base
+            </button>
+            <button
+              onClick={() => setActiveTab('dev')}
+              className={`text-left px-4 py-3 rounded-xl text-sm font-medium transition-all flex items-center ${activeTab === 'dev' ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-500 hover:text-gray-800 hover:bg-surface-hover'}`}
+            >
+              <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+              Developer Mode
+            </button>
           </div>
 
-          {/* Content Area */}
-          <div className="w-3/4 p-8">
-            {saveStatus && (
-              <div className="mb-6 p-4 bg-green-50 text-green-700 rounded-md border border-green-200 text-sm font-medium">
-                {saveStatus}
-              </div>
-            )}
-
-            <form onSubmit={handleSave}>
-              {/* GENERAL TAB */}
-              {activeTab === 'general' && (
-                <div className="space-y-6 animate-fadeIn">
-                  <h2 className="text-xl font-semibold border-b pb-2">LLM Provider Settings</h2>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Active Provider
-                    </label>
-                    <select
-                      className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
-                      value={settings.llmProvider}
-                      onChange={(e) =>
-                        setSettings({
-                          ...settings,
-                          llmProvider: e.target.value as 'mock' | 'gemini',
-                        })
-                      }
-                    >
-                      <option value="mock">Mock Provider (Fast / Local Testing)</option>
-                      <option value="gemini">Google Gemini API (Cloud)</option>
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500">
-                      The RAG pipeline will seamlessly swap providers based on this selection.
-                    </p>
-                  </div>
-
-                  {settings.llmProvider === 'gemini' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Gemini API Key
-                      </label>
-                      <input
-                        type="password"
-                        placeholder="AIzaSy..."
-                        className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
-                        value={settings.geminiApiKey}
-                        onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        Stored securely in local browser storage. Never synced or logged.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="pt-4 flex items-center space-x-4">
-                    <button
-                      type="submit"
-                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition font-medium shadow-sm"
-                    >
-                      Save Configurations
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleTestConnection}
-                      className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 transition font-medium border border-gray-300"
-                    >
-                      Test Connection
-                    </button>
-                  </div>
-                  {providerStatus && (
-                    <div className="text-sm font-mono bg-gray-50 p-2 rounded border mt-2">
-                      {providerStatus}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* DATA TAB */}
-              {activeTab === 'data' && (
-                <div className="space-y-6 animate-fadeIn">
-                  <h2 className="text-xl font-semibold border-b pb-2">Knowledge Base Stats</h2>
-
-                  <div className="grid grid-cols-3 gap-4 mb-6">
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                      <div className="text-blue-500 text-sm font-semibold uppercase tracking-wider">
-                        Documents
-                      </div>
-                      <div className="text-3xl font-bold text-gray-900 mt-1">{stats.docs}</div>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                      <div className="text-blue-500 text-sm font-semibold uppercase tracking-wider">
-                        Chunks
-                      </div>
-                      <div className="text-3xl font-bold text-gray-900 mt-1">{stats.chunks}+</div>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                      <div className="text-blue-500 text-sm font-semibold uppercase tracking-wider">
-                        Embeddings
-                      </div>
-                      <div className="text-3xl font-bold text-gray-900 mt-1">
-                        {stats.embeddings}+
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4 pt-4 border-t">
-                    <h3 className="font-medium text-gray-900">Advanced RAG Settings</h3>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Max Retrieved Chunks (Top-K)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="50"
-                        className="w-1/2 border-gray-300 rounded-md shadow-sm p-2 border"
-                        value={settings.maxRetrievedChunks}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            maxRetrievedChunks: parseInt(e.target.value) || 10,
-                          })
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Context Token Budget
-                      </label>
-                      <input
-                        type="number"
-                        min="500"
-                        max="8000"
-                        step="500"
-                        className="w-1/2 border-gray-300 rounded-md shadow-sm p-2 border"
-                        value={settings.contextTokenBudget}
-                        onChange={(e) =>
-                          setSettings({
-                            ...settings,
-                            contextTokenBudget: parseInt(e.target.value) || 2000,
-                          })
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-6 mt-6 border-t flex space-x-4">
-                    <button
-                      type="button"
-                      onClick={handleClearData}
-                      className="bg-red-50 text-red-600 px-4 py-2 rounded-md hover:bg-red-100 transition font-medium border border-red-200"
-                    >
-                      Clear All Indexed Data
-                    </button>
-                    <button
-                      type="button"
-                      className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 transition font-medium border border-gray-300"
-                    >
-                      Rebuild Search Index
-                    </button>
-                  </div>
-
-                  <button type="submit" className="hidden" id="hidden-save-btn"></button>
-                </div>
-              )}
-
-              {/* DEV TAB */}
-              {activeTab === 'dev' && (
-                <div className="space-y-6 animate-fadeIn">
-                  <h2 className="text-xl font-semibold border-b pb-2">Developer Tools</h2>
-
-                  <label className="flex items-center space-x-3 cursor-pointer p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <input
-                      type="checkbox"
-                      className="form-checkbox h-5 w-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                      checked={settings.developerMode}
-                      onChange={(e) =>
-                        setSettings({ ...settings, developerMode: e.target.checked })
-                      }
-                    />
-                    <div>
-                      <span className="block font-medium text-gray-900">
-                        Enable Developer Mode UI
-                      </span>
-                      <span className="block text-sm text-gray-500">
-                        Shows detailed RAG metrics, latency, WRRF scores, and confidence breakdown
-                        directly in the extension popup.
-                      </span>
-                    </div>
-                  </label>
-
-                  <div className="pt-4">
-                    <button
-                      type="submit"
-                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition font-medium shadow-sm"
-                    >
-                      Save Settings
-                    </button>
-                  </div>
-                </div>
-              )}
+          <div className="flex-1 p-10 bg-surface">
+            <form onSubmit={handleSave} className="h-full flex flex-col">
+              {activeTab === 'llm' && renderLlmTab()}
+              {activeTab === 'knowledge' && renderKnowledgeTab()}
+              {activeTab === 'dev' && renderDevTab()}
             </form>
           </div>
         </div>
