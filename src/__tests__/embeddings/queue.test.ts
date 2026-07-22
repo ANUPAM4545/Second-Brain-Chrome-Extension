@@ -5,36 +5,23 @@ import { EmbeddingRepository } from '../../repositories/EmbeddingRepository';
 import { DocumentRepository } from '../../repositories/DocumentRepository';
 import { DocumentStatus } from '../../shared/types';
 
+
+
 // Mock dependencies
 vi.mock('../../repositories/ChunkRepository');
 vi.mock('../../repositories/EmbeddingRepository');
 vi.mock('../../repositories/DocumentRepository');
-
-// Mock Web Worker
-class MockWorker {
-  onmessage: any;
-  postMessage(data: any) {
-    if (data.type === 'BATCH_EMBED') {
-      setTimeout(() => {
-        this.onmessage({
-          data: {
-            type: 'BATCH_SUCCESS',
-            payload: {
-              jobId: data.payload.jobId,
-              vectors: data.payload.chunks.map(() => [0.1, 0.2]),
-              vectorNorms: data.payload.chunks.map(() => 0.223606),
-              model: 'TestModel',
-              provider: 'TestProvider',
-              dimensions: 2,
-              processingTime: 100,
-            },
-          },
-        });
-      }, 10);
+vi.mock('../../ai/embeddings/TransformersProvider', () => {
+  return {
+    TransformersProvider: class {
+      initialize = vi.fn();
+      embedBatch = vi.fn().mockResolvedValue([[0.1, 0.2], [0.1, 0.2]]);
+      getDimensions = vi.fn().mockReturnValue(2);
+      getModelName = vi.fn().mockReturnValue('TestModel');
+      getProviderName = vi.fn().mockReturnValue('TestProvider');
     }
-  }
-}
-vi.stubGlobal('Worker', MockWorker);
+  };
+});
 
 describe('EmbeddingQueue', () => {
   beforeEach(() => {
