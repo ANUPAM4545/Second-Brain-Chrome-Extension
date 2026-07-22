@@ -11,11 +11,13 @@ if (env.backends.onnx.wasm.proxy !== undefined) {
   env.backends.onnx.wasm.proxy = false;
 }
 
+let globalExtractor: FeatureExtractionPipeline | null = null;
+let globalInitializingPromise: Promise<void> | null = null;
+
 export class TransformersProvider implements EmbeddingProvider {
   private modelName: string;
   private dimensions: number;
   private extractor: FeatureExtractionPipeline | null = null;
-  private initializingPromise: Promise<void> | null = null;
   private onProgress?: (progress: any) => void;
 
   constructor(
@@ -29,32 +31,38 @@ export class TransformersProvider implements EmbeddingProvider {
   }
 
   async initialize(): Promise<void> {
-    if (this.extractor) return; // Already initialized
+    if (globalExtractor) {
+      this.extractor = globalExtractor;
+      return;
+    }
 
     // Prevent multiple concurrent initializations
-    if (!this.initializingPromise) {
-      this.initializingPromise = (async () => {
+    if (!globalInitializingPromise) {
+      globalInitializingPromise = (async () => {
         try {
           if (this.onProgress) {
             this.onProgress({ status: 'loading', model: this.modelName });
           }
 
-          this.extractor = await pipeline('feature-extraction', this.modelName, {
+          globalExtractor = await pipeline('feature-extraction', this.modelName, {
             progress_callback: this.onProgress,
           });
+
+          this.extractor = globalExtractor;
 
           if (this.onProgress) {
             this.onProgress({ status: 'ready', model: this.modelName });
           }
         } catch (error) {
           console.error('[TransformersProvider] Failed to initialize model:', error);
-          this.initializingPromise = null;
+          globalInitializingPromise = null;
           throw error;
         }
       })();
     }
 
-    return this.initializingPromise;
+    await globalInitializingPromise;
+    this.extractor = globalExtractor;
   }
 
   async embed(text: string): Promise<number[]> {
