@@ -39,25 +39,21 @@ export class DenseRetrievalProvider implements RetrievalProvider {
     const sortedIds = Array.from(scores.keys()).sort((a, b) => scores.get(b)! - scores.get(a)!);
 
     const topK = request.topK || 10;
-    const topIds = sortedIds.slice(0, topK);
 
     // Fetch chunk metadata
     const results: RetrievalResult[] = [];
-    for (const chunkId of topIds) {
-      // In production, might want a batch fetch or in-memory chunk cache
-      // Wait, let's just get it from DB.
-      // We don't have ChunkRepository.getById implemented. Let's add it or use Dexie directly.
-      const { db } = await import('../../storage/db');
+    const { db } = await import('../../storage/db');
+
+    for (const chunkId of sortedIds) {
+      if (results.length >= topK) break;
+
       const chunk = await db.chunks.get(chunkId);
 
       if (chunk) {
-        // Apply Metadata filtering (mock implementation for now)
-        if (request.filter?.language && chunk.language !== request.filter.language) {
-          continue;
-        }
-        if (request.filter?.documentId && chunk.documentId !== request.filter.documentId) {
-          continue;
-        }
+        // Apply Metadata filtering
+        if (request.filter?.language && chunk.language !== request.filter.language) continue;
+        if (request.filter?.documentId && chunk.documentId !== request.filter.documentId) continue;
+        if (chunk.wordCount < 15) continue; // Skip useless tiny chunks like infobox cells
 
         results.push({
           chunkId: chunk.id,

@@ -24,20 +24,18 @@ export class SparseRetrievalProvider implements RetrievalProvider {
     const sortedIds = Array.from(scores.keys()).sort((a, b) => scores.get(b)! - scores.get(a)!);
 
     const topK = request.topK || 10;
-    const topIds = sortedIds.slice(0, topK);
-
+    
     const results: RetrievalResult[] = [];
     const { db } = await import('../../storage/db');
 
-    for (const chunkId of topIds) {
+    for (const chunkId of sortedIds) {
+      if (results.length >= topK) break;
+
       const chunk = await db.chunks.get(chunkId);
       if (chunk) {
-        if (request.filter?.language && chunk.language !== request.filter.language) {
-          continue;
-        }
-        if (request.filter?.documentId && chunk.documentId !== request.filter.documentId) {
-          continue;
-        }
+        if (request.filter?.language && chunk.language !== request.filter.language) continue;
+        if (request.filter?.documentId && chunk.documentId !== request.filter.documentId) continue;
+        if (chunk.wordCount < 15) continue; // Skip useless tiny chunks like infobox cells
 
         results.push({
           chunkId: chunk.id,
