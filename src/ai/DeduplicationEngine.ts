@@ -22,7 +22,10 @@ export class DeduplicationEngine {
       incomingDoc.canonicalUrl || incomingDoc.normalizedUrl
     );
 
-    if (existingDocs.length === 0) {
+    // Filter out the incoming document itself
+    const otherDocs = existingDocs.filter((d) => d.id !== incomingDoc.id);
+
+    if (otherDocs.length === 0) {
       // Completely new document
       incomingDoc.status = DocumentStatus.DEDUPLICATED;
       await DocumentRepository.save(incomingDoc);
@@ -30,23 +33,21 @@ export class DeduplicationEngine {
     }
 
     // Sort existing by version number (descending) to get the latest
-    existingDocs.sort((a, b) => b.versionNumber - a.versionNumber);
-    const latestExisting = existingDocs[0];
+    otherDocs.sort((a, b) => b.versionNumber - a.versionNumber);
+    const latestExisting = otherDocs[0];
 
     // 1. Exact Duplicate Check (Canonical Hash)
     if (incomingDoc.contentHash === latestExisting.contentHash) {
-
-
       latestExisting.visitCount += 1;
       latestExisting.lastVisitTime = incomingDoc.captureTime; // Update visit time
       latestExisting.status = DocumentStatus.DEDUPLICATED; // Just to ensure it can pass pipeline
 
       await DocumentRepository.save(latestExisting);
+      
+      // Delete the new orphaned document from the database to prevent it from being stuck in WAITING_FOR_DEDUP
+      const { db } = await import('../storage/db');
+      await db.documents.delete(incomingDoc.id);
 
-      // We return the existing document to proceed in the pipeline if needed,
-      // or the pipeline can halt chunking if we flag it.
-      // Since it's an exact duplicate, we don't strictly need to re-chunk, but the pipeline requires it to go to WaitingForEmbedding.
-      // We will mark it DEDUPLICATED. The chunker can check if chunks already exist.
       return latestExisting;
     }
 
