@@ -21,6 +21,18 @@ Second Brain is a sophisticated Chrome Extension that transforms the way you int
 | :---: | :---: | :---: |
 | <img src="docs/screenshots/popup.png" width="300" alt="Popup UI" /> | <img src="docs/screenshots/settings.png" width="300" alt="Settings UI" /> | <img src="docs/screenshots/knowledge-dashboard.png" width="300" alt="Dashboard" /> |
 
+## 🌟 Visual Explanations
+
+Here is a visual breakdown of how Second Brain operates and its core components:
+
+| Personal Knowledge Graph | Conversational AI Search |
+| :---: | :---: |
+| <img src="public/feature_second_brain.png" width="400" alt="Second Brain" /> | <img src="public/feature_ai_search.png" width="400" alt="AI Search" /> |
+
+| Local RAG Pipeline Workflow | Modern Tech Stack Architecture |
+| :---: | :---: |
+| <img src="public/feature_how_it_works.png" width="400" alt="How it Works" /> | <img src="public/feature_tech_stack.png" width="400" alt="Tech Stack" /> |
+
 ## 🏗 Architecture
 
 The system is designed with a strict separation of concerns, orchestrated through a background service worker.
