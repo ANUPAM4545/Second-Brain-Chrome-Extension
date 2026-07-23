@@ -19,7 +19,7 @@ const formatBytes = (bytes: number, decimals = 2) => {
 };
 
 export const Options = () => {
-  const [activeTab, setActiveTab] = useState<'llm' | 'knowledge' | 'dev'>('llm');
+  const [activeTab, setActiveTab] = useState<'llm' | 'knowledge' | 'dev' | 'about'>('llm');
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saveStatus, setSaveStatus] = useState('');
   const [providerStatus, setProviderStatus] = useState('');
@@ -288,6 +288,92 @@ export const Options = () => {
     </div>
   );
 
+  const renderAboutTab = () => (
+    <div className="space-y-8 animate-fade-in flex-1">
+      <CardHeader className="mb-0">
+        <div>
+          <CardTitle>About Second Brain</CardTitle>
+          <CardDescription>Supercharge your browsing experience with AI-powered memory.</CardDescription>
+        </div>
+      </CardHeader>
+
+      <div className="space-y-8 pb-10">
+        {/* Intro / Features */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="flex flex-col items-center text-center gap-4 bg-background p-6 rounded-3xl border border-border shadow-sm">
+            <img src="/feature_second_brain.png" alt="Second Brain Illustration" className="w-full max-w-[200px] rounded-2xl" />
+            <h3 className="text-xl font-bold text-gray-900">Personal Knowledge Graph</h3>
+            <p className="text-sm text-gray-500 leading-relaxed px-4">
+              Automatically index important articles and documentation. Never lose track of crucial information again.
+            </p>
+          </div>
+          
+          <div className="flex flex-col items-center text-center gap-4 bg-background p-6 rounded-3xl border border-border shadow-sm">
+            <img src="/feature_ai_search.png" alt="AI Search Illustration" className="w-full max-w-[200px] rounded-2xl" />
+            <h3 className="text-xl font-bold text-gray-900">Conversational AI Search</h3>
+            <p className="text-sm text-gray-500 leading-relaxed px-4">
+              Ask questions in natural language to retrieve contextually relevant answers from your past browsing history.
+            </p>
+          </div>
+        </div>
+
+        {/* How It Works Section */}
+        <div className="flex flex-col xl:flex-row items-center gap-8 bg-background p-8 rounded-3xl border border-border shadow-sm">
+          <div className="flex-1 space-y-4">
+            <div className="inline-block px-3 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full uppercase tracking-wider mb-2">How it works</div>
+            <h3 className="text-2xl font-bold text-gray-900">Seamless Local RAG Pipeline</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              When you browse a page, Second Brain extracts the core content and uses a lightweight 
+              <strong> Transformers.js</strong> model running directly in your browser to generate vector embeddings.
+            </p>
+            <ul className="text-sm text-gray-500 space-y-2 mt-4 list-disc list-inside">
+              <li><strong>Extract:</strong> Cleans clutter and extracts text via Readability.</li>
+              <li><strong>Embed:</strong> Converts text into semantic vectors entirely locally.</li>
+              <li><strong>Store:</strong> Saves chunks and vectors in a secure IndexedDB.</li>
+              <li><strong>Retrieve:</strong> Performs local vector similarity search to find answers.</li>
+            </ul>
+          </div>
+          <div className="flex-1 w-full flex justify-center">
+            <img src="/feature_how_it_works.png" alt="How it works diagram" className="w-full max-w-sm rounded-2xl border border-border" />
+          </div>
+        </div>
+
+        {/* Tech Stack Section */}
+        <div className="flex flex-col xl:flex-row-reverse items-center gap-8 bg-background p-8 rounded-3xl border border-border shadow-sm">
+          <div className="flex-1 space-y-4">
+            <div className="inline-block px-3 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full uppercase tracking-wider mb-2">Architecture</div>
+            <h3 className="text-2xl font-bold text-gray-900">Built with Modern Tech</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              Second Brain is architected for privacy, speed, and intelligence. All data parsing and vector search happens offline in your browser.
+            </p>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className="p-4 bg-surface rounded-xl border border-border text-center">
+                <div className="font-bold text-sm text-gray-800">React + Vite</div>
+                <div className="text-xs text-gray-500 mt-1">Fast UI Framework</div>
+              </div>
+              <div className="p-4 bg-surface rounded-xl border border-border text-center">
+                <div className="font-bold text-sm text-gray-800">Dexie (IndexedDB)</div>
+                <div className="text-xs text-gray-500 mt-1">Local Vector DB</div>
+              </div>
+              <div className="p-4 bg-surface rounded-xl border border-border text-center">
+                <div className="font-bold text-sm text-gray-800">Transformers.js</div>
+                <div className="text-xs text-gray-500 mt-1">Local Embeddings</div>
+              </div>
+              <div className="p-4 bg-surface rounded-xl border border-border text-center">
+                <div className="font-bold text-sm text-gray-800">Gemini API</div>
+                <div className="text-xs text-gray-500 mt-1">Cloud LLM Synthesis</div>
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 w-full flex justify-center">
+            <img src="/feature_tech_stack.png" alt="Tech Stack Illustration" className="w-full max-w-sm rounded-2xl border border-border" />
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background text-gray-900 font-sans selection:bg-primary/30">
       <div className="max-w-5xl mx-auto py-12 px-6">
@@ -328,6 +414,13 @@ export const Options = () => {
               <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
               Developer Mode
             </button>
+            <button
+              onClick={() => setActiveTab('about')}
+              className={`text-left px-4 py-3 rounded-xl text-sm font-medium transition-all flex items-center ${activeTab === 'about' ? 'bg-primary text-white shadow-md shadow-primary/20' : 'text-gray-500 hover:text-gray-800 hover:bg-surface-hover'}`}
+            >
+              <svg className="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              About
+            </button>
           </div>
 
           <div className="flex-1 p-10 bg-surface">
@@ -335,6 +428,7 @@ export const Options = () => {
               {activeTab === 'llm' && renderLlmTab()}
               {activeTab === 'knowledge' && renderKnowledgeTab()}
               {activeTab === 'dev' && renderDevTab()}
+              {activeTab === 'about' && renderAboutTab()}
             </form>
           </div>
         </div>
